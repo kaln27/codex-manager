@@ -280,7 +280,8 @@ function renderSessions() {
     const archivedClass = session.archived
       ? "bg-amber-50 text-amber-700"
       : "bg-emerald-50 text-emerald-700";
-    tr.className = "transition hover:bg-white/65";
+    tr.className = "cursor-pointer transition hover:bg-white/65";
+    tr.dataset.rowDetail = session.id;
     tr.innerHTML = `
       <td class="px-4 py-3 align-top"><input class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" type="checkbox" data-select="${escapeAttr(session.id)}" ${state.selected.has(session.id) ? "checked" : ""}></td>
       <td class="whitespace-nowrap px-4 py-3 align-top text-slate-600">${escapeHtml(session.created_label)}</td>
@@ -360,14 +361,22 @@ async function showDetail(id) {
   try {
     const data = await api(`/api/sessions/detail?id=${encodeURIComponent(id)}`);
     $("detailTitle").textContent = data.title || "Session 详情";
+    const archivedLabel = data.archived ? "Yes" : "No";
     $("detailMeta").innerHTML = `
+      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Title</strong><span class="break-all">${escapeHtml(data.title || "-")}</span></div>
       <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">ID</strong><span class="break-all">${escapeHtml(data.id)}</span></div>
       <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">CWD</strong><span class="break-all">${escapeHtml(data.cwd)}</span></div>
       <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Created</strong><span class="break-all">${escapeHtml(data.created_label)}</span></div>
+      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Updated</strong><span class="break-all">${escapeHtml(data.updated_label || "-")}</span></div>
       <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Provider</strong><span class="break-all">${escapeHtml(data.model_provider)}</span></div>
+      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Model</strong><span class="break-all">${escapeHtml(data.model || "-")}</span></div>
       <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Project</strong><span class="break-all">${escapeHtml(data.project)}</span></div>
+      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Archived</strong><span class="break-all">${archivedLabel}</span></div>
       <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">JSONL</strong><span class="break-all">${escapeHtml(data.rollout_path)}</span></div>`;
-    $("detailConversation").textContent = data.conversation.join("\n");
+    const detailBlocks = [];
+    if (data.preview) detailBlocks.push(`Preview:\n${data.preview}`);
+    detailBlocks.push(`Conversation:\n${data.conversation.join("\n")}`);
+    $("detailConversation").textContent = detailBlocks.join("\n\n");
     $("detailModal").classList.add("active");
   } catch (error) {
     setStatus("sessionStatus", error.message, "err");
@@ -438,6 +447,7 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
 });
 
 document.body.addEventListener("click", (event) => {
+  const row = event.target.closest("[data-row-detail]");
   const switchName = event.target.dataset.switch;
   const deleteName = event.target.dataset.deleteProfile;
   const editName = event.target.dataset.editProfile;
@@ -446,6 +456,13 @@ document.body.addEventListener("click", (event) => {
   if (deleteName) deleteProfile(deleteName);
   if (editName) editProfile(editName);
   if (detailId) showDetail(detailId);
+  if (
+    row
+    && !detailId
+    && !event.target.closest("button, input, textarea, select, a")
+  ) {
+    showDetail(row.dataset.rowDetail);
+  }
 });
 
 document.body.addEventListener("change", (event) => {
