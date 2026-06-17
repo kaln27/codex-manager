@@ -1,6 +1,11 @@
 # Codex Manager
 
-Local web UI for managing Codex provider files, sessions, and environment variables.
+Local tools for managing Codex provider files, sessions, and environment variables.
+
+This repository contains two interfaces:
+
+- Web UI: provider profile switching, session management, and `.env` editing.
+- TUI: terminal session manager for changing or deleting selected Codex sessions.
 
 Frontend assets live in `codex_manager/dist/`:
 
@@ -8,7 +13,7 @@ Frontend assets live in `codex_manager/dist/`:
 - `styles.css`
 - `app.js`
 
-## Run
+## Run Web UI
 
 ```bash
 conda run -n llm python codex_manager/app.py
@@ -27,6 +32,16 @@ Optional:
 ```bash
 conda run -n llm python codex_manager/app.py --host 127.0.0.1 --port 8765
 ```
+
+## Run TUI
+
+The TUI opens directly in the terminal and does not require arguments:
+
+```bash
+conda run -n llm python codex_manager/codex_session_manager.py
+```
+
+It supports selecting Codex sessions, inspecting session detail, changing the model provider, and deleting selected sessions. The official OpenAI provider name is `openai`.
 
 ## Data
 

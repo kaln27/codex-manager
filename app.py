@@ -6,19 +6,13 @@ import argparse
 import json
 import mimetypes
 import shutil
-import sys
 import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from codex_session_manager import (  # noqa: E402
+from codex_session_manager import (
     DEFAULT_CODEX_DIR,
     Session,
     delete_selected_sessions,
