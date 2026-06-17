@@ -4,6 +4,8 @@ const state = {
   sort: "created",
   sortDesc: true,
   editingProvider: "",
+  switchingProvider: "",
+  confirmResolve: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -53,6 +55,41 @@ function openAddProviderModal() {
 
 function closeAddProviderModal() {
   $("addProviderModal").classList.remove("active");
+}
+
+function openConfirmModal({title, message, eyebrow = "Confirm", okText = "确认", danger = false}) {
+  $("confirmEyebrow").textContent = eyebrow;
+  $("confirmTitle").textContent = title;
+  $("confirmMessage").textContent = message;
+  $("confirmOkBtn").textContent = okText;
+  $("confirmOkBtn").className = danger
+    ? "danger rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-100"
+    : "primary rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-md";
+  $("confirmModal").classList.add("active");
+  return new Promise((resolve) => {
+    state.confirmResolve = resolve;
+  });
+}
+
+function resolveConfirmModal(value) {
+  $("confirmModal").classList.remove("active");
+  if (state.confirmResolve) state.confirmResolve(value);
+  state.confirmResolve = null;
+}
+
+function openSwitchProviderModal(name) {
+  state.switchingProvider = name;
+  $("switchProviderTitle").textContent = `切换到 ${name}`;
+  $("backupCurrentProviderCheck").checked = false;
+  $("backupProviderName").value = "";
+  $("backupProviderNameWrap").classList.add("hidden");
+  setStatus("switchProviderStatus", "");
+  $("switchProviderModal").classList.add("active");
+}
+
+function closeSwitchProviderModal() {
+  $("switchProviderModal").classList.remove("active");
+  state.switchingProvider = "";
 }
 
 async function loadProfiles() {
@@ -155,20 +192,55 @@ async function loadCurrentProviderFiles() {
 }
 
 async function switchProvider(name) {
-  if (!confirm(`确认切换到 provider profile "${name}"? 当前 config/auth 会先备份。`)) return;
+  openSwitchProviderModal(name);
+}
+
+async function confirmSwitchProvider() {
+  const name = state.switchingProvider;
+  if (!name) return;
+  const shouldBackup = $("backupCurrentProviderCheck").checked;
+  const backupName = $("backupProviderName").value.trim();
   try {
+    if (shouldBackup) {
+      if (!backupName) {
+        setStatus("switchProviderStatus", "请输入备份 Profile 名称。", "err");
+        return;
+      }
+      const current = await api("/api/provider-current");
+      await api("/api/provider-profiles", {
+        method: "POST",
+        body: JSON.stringify({
+          name: backupName,
+          config_toml: current.config_toml || "",
+          auth_json: current.auth_json || "",
+        }),
+      });
+    }
     const data = await api("/api/provider-profiles/switch", {
       method: "POST",
       body: JSON.stringify({name}),
     });
-    setStatus("providerStatus", `已切换。备份目录: ${data.backup_dir}`, "ok");
+    setStatus(
+      "providerStatus",
+      shouldBackup ? `已保存当前 provider 为 "${backupName}"，并切换到 "${data.name}"。` : `已切换到 "${data.name}"。`,
+      "ok",
+    );
+    closeSwitchProviderModal();
+    await loadProfiles();
   } catch (error) {
-    setStatus("providerStatus", error.message, "err");
+    setStatus("switchProviderStatus", error.message, "err");
   }
 }
 
 async function deleteProfile(name) {
-  if (!confirm(`删除 provider profile "${name}"?`)) return;
+  const ok = await openConfirmModal({
+    eyebrow: "Delete Provider",
+    title: "删除 Provider Profile",
+    message: `确认删除 provider profile "${name}"?`,
+    okText: "删除",
+    danger: true,
+  });
+  if (!ok) return;
   try {
     await api("/api/provider-profiles/delete", {
       method: "POST",
@@ -204,12 +276,17 @@ function renderSessions() {
   body.innerHTML = "";
   for (const session of state.sessions) {
     const tr = document.createElement("tr");
+    const archivedLabel = session.archived ? "Yes" : "No";
+    const archivedClass = session.archived
+      ? "bg-amber-50 text-amber-700"
+      : "bg-emerald-50 text-emerald-700";
     tr.className = "transition hover:bg-white/65";
     tr.innerHTML = `
       <td class="px-4 py-3 align-top"><input class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" type="checkbox" data-select="${escapeAttr(session.id)}" ${state.selected.has(session.id) ? "checked" : ""}></td>
       <td class="whitespace-nowrap px-4 py-3 align-top text-slate-600">${escapeHtml(session.created_label)}</td>
       <td class="px-4 py-3 align-top"><span class="inline-flex min-h-6 items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">${escapeHtml(session.model_provider)}</span></td>
       <td class="whitespace-nowrap px-4 py-3 align-top font-medium text-slate-700">${escapeHtml(session.project)}</td>
+      <td class="px-4 py-3 align-top"><span class="inline-flex min-h-6 items-center rounded-full px-2.5 py-1 text-xs font-bold ${archivedClass}">${archivedLabel}</span></td>
       <td class="max-w-[620px] truncate px-4 py-3 align-top text-slate-800" title="${escapeAttr(session.title)}">${escapeHtml(session.title)}</td>
       <td class="px-4 py-3 align-top"><button data-detail="${escapeAttr(session.id)}" class="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-800 transition hover:bg-white hover:shadow-sm">详情</button></td>`;
     body.appendChild(tr);
@@ -258,7 +335,14 @@ async function updateSelectedProvider() {
 async function deleteSelectedSessions() {
   const ids = [...state.selected];
   if (!ids.length) return setStatus("sessionStatus", "请先选择 session。", "err");
-  if (!confirm(`确认删除 ${ids.length} 个 session? 删除前会自动备份。`)) return;
+  const ok = await openConfirmModal({
+    eyebrow: "Delete Sessions",
+    title: "删除选中的 Sessions",
+    message: `确认删除 ${ids.length} 个 session? 删除前会自动备份。`,
+    okText: "删除",
+    danger: true,
+  });
+  if (!ok) return;
   try {
     const data = await api("/api/sessions/delete", {
       method: "POST",
@@ -404,6 +488,20 @@ $("providerModal").addEventListener("click", (event) => {
   if (event.target.id === "providerModal") $("providerModal").classList.remove("active");
 });
 $("saveProviderEditBtn").addEventListener("click", saveProfileEdits);
+$("backupCurrentProviderCheck").addEventListener("change", (event) => {
+  $("backupProviderNameWrap").classList.toggle("hidden", !event.target.checked);
+  if (event.target.checked) $("backupProviderName").focus();
+});
+$("cancelSwitchProviderBtn").addEventListener("click", closeSwitchProviderModal);
+$("confirmSwitchProviderBtn").addEventListener("click", confirmSwitchProvider);
+$("switchProviderModal").addEventListener("click", (event) => {
+  if (event.target.id === "switchProviderModal") closeSwitchProviderModal();
+});
+$("confirmCancelBtn").addEventListener("click", () => resolveConfirmModal(false));
+$("confirmOkBtn").addEventListener("click", () => resolveConfirmModal(true));
+$("confirmModal").addEventListener("click", (event) => {
+  if (event.target.id === "confirmModal") resolveConfirmModal(false);
+});
 $("addEnvRowBtn").addEventListener("click", () => addEnvRow());
 $("saveEnvBtn").addEventListener("click", saveEnv);
 $("reloadEnvBtn").addEventListener("click", loadEnv);

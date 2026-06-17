@@ -136,13 +136,9 @@ def switch_profile(name: str) -> dict[str, object]:
         raise FileNotFoundError("Profile must contain config.toml and auth.json.")
 
     DEFAULT_CODEX_DIR.mkdir(parents=True, exist_ok=True)
-    backup_dir = backup_codex_files(
-        [codex_file("config.toml"), codex_file("auth.json")],
-        "provider-switch",
-    )
     shutil.copy2(config_source, codex_file("config.toml"))
     shutil.copy2(auth_source, codex_file("auth.json"))
-    return {"backup_dir": str(backup_dir)}
+    return {"name": source.name}
 
 
 def delete_profile(name: str) -> None:
