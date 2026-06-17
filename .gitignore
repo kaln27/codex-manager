@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.pyo
+
+.DS_Store
+
+provider_profiles/
+web_manager_backups/
+
+build/
+dist_build/
+*.spec
