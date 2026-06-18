@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
 import mimetypes
+import os
+import secrets
 import shutil
 import time
 from http import HTTPStatus
@@ -29,10 +33,52 @@ SQLITE_NAME = "state_5.sqlite"
 
 
 DIST_DIR = APP_DIR / "dist"
+PASSWORD_FILE = APP_DIR / ".manager_password"
+SECRET_FILE = APP_DIR / ".manager_secret"
+SESSION_COOKIE = "codex_manager_session"
+SESSION_MAX_AGE = 30 * 24 * 60 * 60
 
 
 def stamp() -> str:
     return time.strftime("%Y%m%d-%H%M%S")
+
+
+def read_password() -> str:
+    password = os.environ.get("CODEX_MANAGER_PASSWORD", "").strip()
+    if password:
+        return password
+    if PASSWORD_FILE.exists():
+        return PASSWORD_FILE.read_text(encoding="utf-8").strip()
+    return ""
+
+
+def get_auth_secret() -> str:
+    if SECRET_FILE.exists():
+        secret = SECRET_FILE.read_text(encoding="utf-8").strip()
+        if secret:
+            return secret
+    secret = secrets.token_urlsafe(48)
+    SECRET_FILE.write_text(secret, encoding="utf-8")
+    return secret
+
+
+def sign_token(token: str) -> str:
+    return hmac.new(get_auth_secret().encode("utf-8"), token.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def make_session_cookie() -> str:
+    issued_at = str(int(time.time()))
+    signature = sign_token(issued_at)
+    return f"{issued_at}.{signature}"
+
+
+def is_valid_session_cookie(value: str) -> bool:
+    issued_at, sep, signature = value.partition(".")
+    if not sep or not issued_at.isdigit():
+        return False
+    if int(time.time()) - int(issued_at) > SESSION_MAX_AGE:
+        return False
+    return hmac.compare_digest(signature, sign_token(issued_at))
 
 
 def sanitize_profile_name(name: str) -> str:
@@ -264,9 +310,11 @@ class CodexManagerHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         try:
+            if not self.ensure_authenticated(parsed.path):
+                return
             if parsed.path == "/":
                 self.send_static("index.html")
-            elif parsed.path in {"/index.html", "/styles.css", "/app.js"}:
+            elif parsed.path in {"/index.html", "/login.html", "/styles.css", "/app.js"}:
                 self.send_static(parsed.path.lstrip("/"))
             elif parsed.path == "/api/provider-profiles":
                 self.send_json({"profiles": list_profiles(), "codex_dir": str(DEFAULT_CODEX_DIR)})
@@ -302,7 +350,13 @@ class CodexManagerHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         try:
             data = self.read_json()
-            if parsed.path == "/api/provider-profiles":
+            if parsed.path == "/api/login":
+                self.login(data)
+            elif parsed.path == "/api/logout":
+                self.logout()
+            elif not self.ensure_authenticated(parsed.path):
+                return
+            elif parsed.path == "/api/provider-profiles":
                 result = add_profile(
                     str(data.get("name", "")),
                     str(data.get("config_toml", "")),
@@ -362,6 +416,55 @@ class CodexManagerHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
 
+    def ensure_authenticated(self, path: str) -> bool:
+        if not read_password():
+            return True
+        if path in {"/login.html", "/styles.css"}:
+            return True
+        if self.is_authenticated():
+            return True
+        if path.startswith("/api/"):
+            self.send_json({"ok": False, "error": "Authentication required."}, HTTPStatus.UNAUTHORIZED)
+        else:
+            self.send_response(HTTPStatus.FOUND)
+            self.send_header("Location", "/login.html")
+            self.end_headers()
+        return False
+
+    def is_authenticated(self) -> bool:
+        cookies = self.headers.get("Cookie", "")
+        for item in cookies.split(";"):
+            name, sep, value = item.strip().partition("=")
+            if sep and name == SESSION_COOKIE and is_valid_session_cookie(value):
+                return True
+        return False
+
+    def login(self, data: dict[str, object]) -> None:
+        configured_password = read_password()
+        if not configured_password:
+            self.send_json({"ok": True, "disabled": True})
+            return
+        password = str(data.get("password", ""))
+        if not hmac.compare_digest(password, configured_password):
+            self.send_json({"ok": False, "error": "Invalid password."}, HTTPStatus.UNAUTHORIZED)
+            return
+        cookie = make_session_cookie()
+        self.send_json(
+            {"ok": True},
+            headers=[
+                (
+                    "Set-Cookie",
+                    f"{SESSION_COOKIE}={cookie}; Max-Age={SESSION_MAX_AGE}; Path=/; HttpOnly; SameSite=Lax",
+                )
+            ],
+        )
+
+    def logout(self) -> None:
+        self.send_json(
+            {"ok": True},
+            headers=[("Set-Cookie", f"{SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax")],
+        )
+
     def read_json(self) -> dict[str, object]:
         length = int(self.headers.get("Content-Length", "0"))
         if length == 0:
@@ -391,11 +494,18 @@ class CodexManagerHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    def send_json(self, data: dict[str, object], status: HTTPStatus = HTTPStatus.OK) -> None:
+    def send_json(
+        self,
+        data: dict[str, object],
+        status: HTTPStatus = HTTPStatus.OK,
+        headers: list[tuple[str, str]] | None = None,
+    ) -> None:
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
+        for name, value in headers or []:
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(payload)
 

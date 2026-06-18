@@ -3,6 +3,8 @@ __pycache__/
 *.pyo
 
 .DS_Store
+.manager_password
+.manager_secret
 
 provider_profiles/
 web_manager_backups/

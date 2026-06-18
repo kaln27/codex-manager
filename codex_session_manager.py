@@ -183,8 +183,30 @@ def require_codex_dir(codex_dir: Path) -> None:
         raise FileNotFoundError(f"SQLite file not found: {sqlite_path(codex_dir)}")
 
 
+def load_session_index_titles(codex_dir: Path) -> dict[str, str]:
+    index_path = codex_dir / "session_index.jsonl"
+    titles: dict[str, str] = {}
+    if not index_path.exists():
+        return titles
+    try:
+        with index_path.open("r", encoding="utf-8") as handle:
+            for raw_line in handle:
+                try:
+                    record = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+                session_id = str(record.get("id") or "").strip()
+                title = str(record.get("thread_name") or "").strip()
+                if session_id and title:
+                    titles[session_id] = title
+    except OSError:
+        return titles
+    return titles
+
+
 def load_sessions(codex_dir: Path, include_archived: bool = True) -> list[Session]:
     require_codex_dir(codex_dir)
+    indexed_titles = load_session_index_titles(codex_dir)
     conn = sqlite3.connect(sqlite_path(codex_dir))
     conn.row_factory = sqlite3.Row
     try:
@@ -199,7 +221,14 @@ def load_sessions(codex_dir: Path, include_archived: bool = True) -> list[Sessio
         if cursor.fetchone() is None:
             raise RuntimeError("Table 'threads' not found in Codex sqlite database.")
 
-        where = "" if include_archived else "WHERE archived = 0"
+        filters = [
+            "COALESCE(thread_source, '') != 'subagent'",
+            "COALESCE(model, '') != 'codex-auto-review'",
+            "COALESCE(source, '') NOT LIKE '%\"subagent\"%'",
+        ]
+        if not include_archived:
+            filters.append("archived = 0")
+        where = "WHERE " + " AND ".join(filters)
         cursor.execute(
             f"""
             SELECT
@@ -225,7 +254,7 @@ def load_sessions(codex_dir: Path, include_archived: bool = True) -> list[Sessio
                 created_at=int(row["created_at"] or 0),
                 updated_at=int(row["updated_at"] or 0),
                 model_provider=row["model_provider"] or "",
-                title=row["title"] or row["preview"] or "(untitled)",
+                title=indexed_titles.get(row["id"]) or row["title"] or "(untitled)",
                 cwd=row["cwd"] or "",
                 archived=bool(row["archived"]),
                 model=row["model"] or "",

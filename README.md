@@ -15,6 +15,23 @@ Frontend assets live in `codex_manager/dist/`:
 
 ## Run Web UI
 
+By default, the Web UI has no password. Set one before exposing it beyond your own machine.
+
+Use an environment variable:
+
+```bash
+CODEX_MANAGER_PASSWORD='your-password' conda run -n llm python codex_manager/app.py
+```
+
+Or create a local password file:
+
+```bash
+printf '%s\n' 'your-password' > codex_manager/.manager_password
+conda run -n llm python codex_manager/app.py
+```
+
+`codex_manager/.manager_password` is ignored by git.
+
 ```bash
 conda run -n llm python codex_manager/app.py
 ```

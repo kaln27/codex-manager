@@ -24,10 +24,22 @@ async function api(path, options = {}) {
       data = {error: text};
     }
   }
+  if (response.status === 401) {
+    window.location.href = "/login.html";
+    throw new Error(data.error || "Authentication required.");
+  }
   if (!response.ok || data.ok === false) {
     throw new Error(data.error || response.statusText);
   }
   return data;
+}
+
+async function logout() {
+  try {
+    await api("/api/logout", {method: "POST", body: JSON.stringify({})});
+  } finally {
+    window.location.href = "/login.html";
+  }
 }
 
 function setStatus(id, message, kind = "") {
@@ -363,7 +375,7 @@ async function showDetail(id) {
     $("detailTitle").textContent = data.title || "Session 详情";
     const archivedLabel = data.archived ? "Yes" : "No";
     $("detailMeta").innerHTML = `
-      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Title</strong><span class="break-all">${escapeHtml(data.title || "-")}</span></div>
+      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Title</strong><span class="max-h-24 overflow-auto break-all pr-2">${escapeHtml(data.title || "-")}</span></div>
       <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">ID</strong><span class="break-all">${escapeHtml(data.id)}</span></div>
       <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">CWD</strong><span class="break-all">${escapeHtml(data.cwd)}</span></div>
       <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Created</strong><span class="break-all">${escapeHtml(data.created_label)}</span></div>
@@ -476,6 +488,7 @@ document.body.addEventListener("change", (event) => {
 });
 
 $("addProviderBtn").addEventListener("click", addProvider);
+$("logoutBtn").addEventListener("click", logout);
 $("openAddProviderBtn").addEventListener("click", openAddProviderModal);
 $("closeAddProviderModalBtn").addEventListener("click", closeAddProviderModal);
 $("addProviderModal").addEventListener("click", (event) => {
