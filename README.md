@@ -66,5 +66,6 @@ It supports selecting Codex sessions, inspecting session detail, changing the mo
 - Switching providers replaces `~/.codex/config.toml` and `~/.codex/auth.json`.
 - Provider switching does not automatically create file backups. The Web UI can save the current provider as a named profile before switching.
 - Session provider edits, session deletion, and `.env` saves create backups under `~/.codex/*_backups/`.
+- `~/.codex/provider_gui_backups/` keeps only the 3 most recent backups.
 - Sessions are loaded from `~/.codex/state_5.sqlite` and their matching jsonl rollout files.
 - Env values are saved to `~/.codex/.env`, one `KEY=VALUE` pair per line.

@@ -276,7 +276,18 @@ def make_backup_dir(codex_dir: Path) -> Path:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup_dir = codex_dir / "provider_gui_backups" / stamp
     backup_dir.mkdir(parents=True, exist_ok=False)
+    prune_backup_dirs(codex_dir)
     return backup_dir
+
+
+def prune_backup_dirs(codex_dir: Path, keep: int = 3) -> None:
+    backup_root = codex_dir / "provider_gui_backups"
+    if keep < 1 or not backup_root.exists():
+        return
+    backups = [path for path in backup_root.iterdir() if path.is_dir()]
+    backups.sort(key=lambda path: (path.stat().st_mtime, path.name), reverse=True)
+    for path in backups[keep:]:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def backup_file(file_path: Path, codex_dir: Path, backup_dir: Path) -> None:
