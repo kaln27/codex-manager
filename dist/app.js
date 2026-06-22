@@ -44,10 +44,23 @@ async function logout() {
 
 function setStatus(id, message, kind = "") {
   const el = $(id);
+  if (!el) return;
   el.textContent = message || "";
-  const tone = kind === "ok" ? "text-emerald-600" : kind === "err" ? "text-red-600" : "text-slate-500";
-  if (!el.dataset.baseClass) el.dataset.baseClass = el.className || "status";
-  el.className = `${el.dataset.baseClass} ${tone}`;
+  el.classList.remove("status--ok", "status--err");
+  if (kind === "ok") el.classList.add("status--ok");
+  else if (kind === "err") el.classList.add("status--err");
+}
+
+let toastTimer;
+function toast(message, kind = "") {
+  const el = $("toast");
+  const text = $("toastText");
+  if (!el || !text) return;
+  text.textContent = message;
+  el.classList.toggle("err", kind === "err");
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
 }
 
 function switchTab(name) {
@@ -69,14 +82,12 @@ function closeAddProviderModal() {
   $("addProviderModal").classList.remove("active");
 }
 
-function openConfirmModal({title, message, eyebrow = "Confirm", okText = "确认", danger = false}) {
+function openConfirmModal({title, message, eyebrow = "CONFIRM", okText = "确认", danger = false}) {
   $("confirmEyebrow").textContent = eyebrow;
   $("confirmTitle").textContent = title;
   $("confirmMessage").textContent = message;
   $("confirmOkBtn").textContent = okText;
-  $("confirmOkBtn").className = danger
-    ? "danger rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-100"
-    : "primary rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-blue-600/20 transition hover:bg-blue-700 hover:shadow-md";
+  $("confirmOkBtn").className = danger ? "btn btn-danger" : "btn btn-primary";
   $("confirmModal").classList.add("active");
   return new Promise((resolve) => {
     state.confirmResolve = resolve;
@@ -94,7 +105,7 @@ function openSwitchProviderModal(name) {
   $("switchProviderTitle").textContent = `切换到 ${name}`;
   $("backupCurrentProviderCheck").checked = false;
   $("backupProviderName").value = "";
-  $("backupProviderNameWrap").classList.add("hidden");
+  $("backupProviderNameWrap").style.display = "none";
   setStatus("switchProviderStatus", "");
   $("switchProviderModal").classList.add("active");
 }
@@ -108,27 +119,38 @@ async function loadProfiles() {
   try {
     const data = await api("/api/provider-profiles");
     $("codexDir").textContent = data.codex_dir;
+    $("profileCount").textContent = data.profiles.length;
     const list = $("profileList");
     list.innerHTML = "";
     if (!data.profiles.length) {
-      list.innerHTML = '<div class="rounded-lg border border-dashed border-slate-300 bg-white/50 p-5 text-sm text-slate-500">还没有 provider profile。</div>';
+      list.innerHTML = `
+        <div class="empty">
+          <div class="empty-icon">{ }</div>
+          <p class="empty-text">还没有 provider profile。</p>
+          <button data-open-add="1" class="btn btn-accent btn-sm"><span style="font-size:16px; line-height:1;">+</span> 添加第一个 Provider</button>
+        </div>`;
       return;
     }
     for (const profile of data.profiles) {
+      const initial = (profile.name || "?").trim().charAt(0).toUpperCase() || "?";
       const item = document.createElement("div");
-      item.className = "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-slate-200/70 bg-white/65 p-4 transition hover:bg-white max-md:grid-cols-1";
+      item.className = "profile-row";
       item.innerHTML = `
-        <div class="min-w-0">
-          <strong class="block truncate text-sm font-semibold text-slate-950">${escapeHtml(profile.name)}</strong>
-          <div class="mt-2 flex flex-wrap gap-1.5">
-            <span class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600">${profile.has_config ? "config.toml" : "缺 config"}</span>
-            <span class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600">${profile.has_auth ? "auth.json" : "缺 auth"}</span>
+        <div class="profile-left">
+          <div class="avatar">${escapeHtml(initial)}</div>
+          <div class="profile-info">
+            <div class="profile-name-row">
+              <span class="profile-name">${escapeHtml(profile.name)}</span>
+              <span class="badge ${profile.has_config ? "ok" : "miss"}">${profile.has_config ? "config.toml" : "缺 config"}</span>
+              <span class="badge ${profile.has_auth ? "ok" : "miss"}">${profile.has_auth ? "auth.json" : "缺 auth"}</span>
+            </div>
+            <span class="profile-meta">provider profile</span>
           </div>
         </div>
-        <div class="flex flex-wrap items-center justify-end gap-2 max-md:justify-start">
-          <button data-edit-profile="${escapeAttr(profile.name)}" class="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-800 transition hover:bg-white hover:shadow-sm">查看/编辑</button>
-          <button data-switch="${escapeAttr(profile.name)}" class="primary rounded-full bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-blue-600/20 transition hover:bg-blue-700">切换</button>
-          <button data-delete-profile="${escapeAttr(profile.name)}" class="danger rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-100">删除</button>
+        <div class="profile-actions">
+          <button data-edit-profile="${escapeAttr(profile.name)}" class="btn btn-ghost btn-xs">查看/编辑</button>
+          <button data-switch="${escapeAttr(profile.name)}" class="btn btn-accent btn-xs">切换</button>
+          <button data-delete-profile="${escapeAttr(profile.name)}" class="btn-icon" title="删除">✕</button>
         </div>`;
       list.appendChild(item);
     }
@@ -164,6 +186,7 @@ async function saveProfileEdits() {
     });
     setStatus("editProviderStatus", "Profile 已保存。", "ok");
     setStatus("providerStatus", `Provider "${state.editingProvider}" 已更新。`, "ok");
+    toast(`已保存 “${state.editingProvider}”`);
     await loadProfiles();
   } catch (error) {
     setStatus("editProviderStatus", error.message, "err");
@@ -172,10 +195,11 @@ async function saveProfileEdits() {
 
 async function addProvider() {
   try {
+    const name = $("providerName").value;
     await api("/api/provider-profiles", {
       method: "POST",
       body: JSON.stringify({
-        name: $("providerName").value,
+        name,
         config_toml: $("providerConfig").value,
         auth_json: $("providerAuth").value,
       }),
@@ -187,6 +211,7 @@ async function addProvider() {
     $("providerAuth").value = "";
     await loadProfiles();
     closeAddProviderModal();
+    toast(`已保存 “${(name || "").trim() || "Provider"}”`);
   } catch (error) {
     setStatus("addProviderStatus", error.message, "err");
   }
@@ -237,6 +262,7 @@ async function confirmSwitchProvider() {
       shouldBackup ? `已保存当前 provider 为 "${backupName}"，并切换到 "${data.name}"。` : `已切换到 "${data.name}"。`,
       "ok",
     );
+    toast(shouldBackup ? `已备份并切换到 “${data.name}”` : `已切换到 “${data.name}”`);
     closeSwitchProviderModal();
     await loadProfiles();
   } catch (error) {
@@ -246,7 +272,7 @@ async function confirmSwitchProvider() {
 
 async function deleteProfile(name) {
   const ok = await openConfirmModal({
-    eyebrow: "Delete Provider",
+    eyebrow: "DELETE PROVIDER",
     title: "删除 Provider Profile",
     message: `确认删除 provider profile "${name}"?`,
     okText: "删除",
@@ -259,6 +285,7 @@ async function deleteProfile(name) {
       body: JSON.stringify({name}),
     });
     setStatus("providerStatus", "Profile 已删除。", "ok");
+    toast("已移除 profile");
     await loadProfiles();
   } catch (error) {
     setStatus("providerStatus", error.message, "err");
@@ -286,22 +313,31 @@ async function loadSessions() {
 function renderSessions() {
   const body = $("sessionsBody");
   body.innerHTML = "";
+  if (!state.sessions.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="7" style="padding:0;">
+      <div class="empty" style="margin:8px;">
+        <div class="empty-icon">~</div>
+        <p class="empty-text">还没有 session 记录。</p>
+      </div></td>`;
+    body.appendChild(tr);
+    updateSortMarks();
+    return;
+  }
   for (const session of state.sessions) {
     const tr = document.createElement("tr");
-    const archivedLabel = session.archived ? "Yes" : "No";
-    const archivedClass = session.archived
-      ? "bg-amber-50 text-amber-700"
-      : "bg-emerald-50 text-emerald-700";
-    tr.className = "cursor-pointer transition hover:bg-white/65";
+    tr.className = "sess-row";
     tr.dataset.rowDetail = session.id;
+    const archivedLabel = session.archived ? "Yes" : "No";
+    const archivedClass = session.archived ? "pill-yes" : "pill-no";
     tr.innerHTML = `
-      <td class="px-4 py-3 align-top"><input class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" type="checkbox" data-select="${escapeAttr(session.id)}" ${state.selected.has(session.id) ? "checked" : ""}></td>
-      <td class="whitespace-nowrap px-4 py-3 align-top text-slate-600">${escapeHtml(session.created_label)}</td>
-      <td class="px-4 py-3 align-top"><span class="inline-flex min-h-6 items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">${escapeHtml(session.model_provider)}</span></td>
-      <td class="whitespace-nowrap px-4 py-3 align-top font-medium text-slate-700">${escapeHtml(session.project)}</td>
-      <td class="px-4 py-3 align-top"><span class="inline-flex min-h-6 items-center rounded-full px-2.5 py-1 text-xs font-bold ${archivedClass}">${archivedLabel}</span></td>
-      <td class="max-w-[620px] truncate px-4 py-3 align-top text-slate-800" title="${escapeAttr(session.title)}">${escapeHtml(session.title)}</td>
-      <td class="px-4 py-3 align-top"><button data-detail="${escapeAttr(session.id)}" class="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-800 transition hover:bg-white hover:shadow-sm">详情</button></td>`;
+      <td class="col-check"><input class="checkbox" type="checkbox" data-select="${escapeAttr(session.id)}" ${state.selected.has(session.id) ? "checked" : ""}></td>
+      <td class="cell-nowrap">${escapeHtml(session.created_label)}</td>
+      <td><span class="pill pill-provider">${escapeHtml(session.model_provider)}</span></td>
+      <td class="cell-project">${escapeHtml(session.project)}</td>
+      <td><span class="pill ${archivedClass}">${archivedLabel}</span></td>
+      <td class="cell-title" title="${escapeAttr(session.title)}">${escapeHtml(session.title)}</td>
+      <td><button data-detail="${escapeAttr(session.id)}" class="btn btn-ghost btn-xs">详情</button></td>`;
     body.appendChild(tr);
   }
   $("selectAllSessions").checked = state.sessions.length > 0 && state.sessions.every((s) => state.selected.has(s.id));
@@ -310,8 +346,8 @@ function renderSessions() {
 
 function updateSortMarks() {
   $("createdSortMark").textContent = state.sort === "created" ? (state.sortDesc ? "↓" : "↑") : "";
-  $("providerSortMark").textContent = state.sort === "provider" ? "*" : "";
-  $("projectsSortMark").textContent = state.sort === "projects" ? "*" : "";
+  $("providerSortMark").textContent = state.sort === "provider" ? "↑" : "";
+  $("projectsSortMark").textContent = state.sort === "projects" ? "↑" : "";
 }
 
 function setSessionSort(sortKey) {
@@ -339,6 +375,7 @@ async function updateSelectedProvider() {
       body: JSON.stringify({ids, provider}),
     });
     setStatus("sessionStatus", `已更新 ${data.sqlite_rows} 条 sqlite 记录，${data.jsonl_files} 个 jsonl。`, "ok");
+    toast(`已更新 ${ids.length} 个 session 的 provider`);
     await loadSessions();
   } catch (error) {
     setStatus("sessionStatus", error.message, "err");
@@ -349,7 +386,7 @@ async function deleteSelectedSessions() {
   const ids = [...state.selected];
   if (!ids.length) return setStatus("sessionStatus", "请先选择 session。", "err");
   const ok = await openConfirmModal({
-    eyebrow: "Delete Sessions",
+    eyebrow: "DELETE SESSIONS",
     title: "删除选中的 Sessions",
     message: `确认删除 ${ids.length} 个 session? 删除前会自动备份。`,
     okText: "删除",
@@ -363,6 +400,7 @@ async function deleteSelectedSessions() {
     });
     state.selected.clear();
     setStatus("sessionStatus", `已删除 ${data.sqlite_rows} 条 sqlite 记录，${data.jsonl_files} 个 jsonl。备份: ${data.backup_dir}`, "ok");
+    toast(`已删除 ${data.jsonl_files} 个 session（已备份）`);
     await loadSessions();
   } catch (error) {
     setStatus("sessionStatus", error.message, "err");
@@ -374,17 +412,21 @@ async function showDetail(id) {
     const data = await api(`/api/sessions/detail?id=${encodeURIComponent(id)}`);
     $("detailTitle").textContent = data.title || "Session 详情";
     const archivedLabel = data.archived ? "Yes" : "No";
-    $("detailMeta").innerHTML = `
-      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Title</strong><span class="max-h-24 overflow-auto break-all pr-2">${escapeHtml(data.title || "-")}</span></div>
-      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">ID</strong><span class="break-all">${escapeHtml(data.id)}</span></div>
-      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">CWD</strong><span class="break-all">${escapeHtml(data.cwd)}</span></div>
-      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Created</strong><span class="break-all">${escapeHtml(data.created_label)}</span></div>
-      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Updated</strong><span class="break-all">${escapeHtml(data.updated_label || "-")}</span></div>
-      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Provider</strong><span class="break-all">${escapeHtml(data.model_provider)}</span></div>
-      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Model</strong><span class="break-all">${escapeHtml(data.model || "-")}</span></div>
-      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Project</strong><span class="break-all">${escapeHtml(data.project)}</span></div>
-      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">Archived</strong><span class="break-all">${archivedLabel}</span></div>
-      <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3"><strong class="text-slate-950">JSONL</strong><span class="break-all">${escapeHtml(data.rollout_path)}</span></div>`;
+    const rows = [
+      ["Title", data.title || "-"],
+      ["ID", data.id],
+      ["CWD", data.cwd],
+      ["Created", data.created_label],
+      ["Updated", data.updated_label || "-"],
+      ["Provider", data.model_provider],
+      ["Model", data.model || "-"],
+      ["Project", data.project],
+      ["Archived", archivedLabel],
+      ["JSONL", data.rollout_path],
+    ];
+    $("detailMeta").innerHTML = rows
+      .map(([label, value]) => `<div class="detail-row"><strong>${label}</strong><span>${escapeHtml(value)}</span></div>`)
+      .join("");
     const detailBlocks = [];
     if (data.preview) detailBlocks.push(`Preview:\n${data.preview}`);
     detailBlocks.push(`Conversation:\n${data.conversation.join("\n")}`);
@@ -398,42 +440,37 @@ async function showDetail(id) {
 async function loadEnv() {
   try {
     const data = await api("/api/env");
-    renderEnvRows(data.entries);
-    setStatus("envStatus", data.exists ? "已读取 .env。" : "~/.codex/.env 不存在，保存后会创建。");
+    $("envText").value = data.text || "";
+    setStatus("envStatus", data.exists ? "已读取 ~/.codex/.env。" : "~/.codex/.env 不存在，保存后会创建。");
   } catch (error) {
     setStatus("envStatus", error.message, "err");
   }
 }
 
-function renderEnvRows(entries) {
-  const root = $("envRows");
-  root.innerHTML = "";
-  const rows = entries.length ? entries : [{key: "", value: ""}];
-  for (const entry of rows) addEnvRow(entry.key || "", entry.value || "");
-}
-
-function addEnvRow(key = "", value = "") {
-  const row = document.createElement("div");
-  row.className = "env-row grid grid-cols-[minmax(180px,260px)_minmax(260px,1fr)_auto] items-center gap-3 max-md:grid-cols-1";
-  row.innerHTML = `
-    <input class="rounded-lg border border-slate-200 bg-white/85 px-3 py-2.5 text-sm text-slate-950 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" placeholder="KEY" value="${escapeAttr(key)}">
-    <input class="rounded-lg border border-slate-200 bg-white/85 px-3 py-2.5 text-sm text-slate-950 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" placeholder="VALUE" value="${escapeAttr(value)}">
-    <button class="danger rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-100">删除</button>`;
-  row.querySelector("button").addEventListener("click", () => row.remove());
-  $("envRows").appendChild(row);
+function parseEnvText(text) {
+  const entries = [];
+  for (const line of String(text).split(/\r?\n/)) {
+    const stripped = line.trim();
+    if (!stripped || stripped.startsWith("#")) continue;
+    const index = stripped.indexOf("=");
+    if (index === -1) {
+      entries.push({key: stripped, value: ""});
+    } else {
+      entries.push({key: stripped.slice(0, index).trim(), value: stripped.slice(index + 1)});
+    }
+  }
+  return entries.filter((entry) => entry.key);
 }
 
 async function saveEnv() {
-  const entries = [...document.querySelectorAll(".env-row")].map((row) => {
-    const inputs = row.querySelectorAll("input");
-    return {key: inputs[0].value.trim(), value: inputs[1].value};
-  }).filter((entry) => entry.key);
+  const entries = parseEnvText($("envText").value);
   try {
     await api("/api/env", {
       method: "POST",
       body: JSON.stringify({entries}),
     });
-    setStatus("envStatus", "已保存 .env。", "ok");
+    setStatus("envStatus", "已保存 ~/.codex/.env。", "ok");
+    toast("已保存 ~/.codex/.env");
     await loadEnv();
   } catch (error) {
     setStatus("envStatus", error.message, "err");
@@ -460,10 +497,12 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
 
 document.body.addEventListener("click", (event) => {
   const row = event.target.closest("[data-row-detail]");
+  const openAdd = event.target.closest("[data-open-add]");
   const switchName = event.target.dataset.switch;
   const deleteName = event.target.dataset.deleteProfile;
   const editName = event.target.dataset.editProfile;
   const detailId = event.target.dataset.detail;
+  if (openAdd) openAddProviderModal();
   if (switchName) switchProvider(switchName);
   if (deleteName) deleteProfile(deleteName);
   if (editName) editProfile(editName);
@@ -488,9 +527,21 @@ document.body.addEventListener("change", (event) => {
 });
 
 $("addProviderBtn").addEventListener("click", addProvider);
-$("logoutBtn").addEventListener("click", logout);
+$("logoutBtn").addEventListener("click", async () => {
+  const ok = await openConfirmModal({
+    eyebrow: "LOGOUT",
+    title: "退出登录？",
+    message: "你将退出本地 console，已保存的 provider 不会被删除。",
+    okText: "退出登录",
+    danger: true,
+  });
+  if (!ok) return;
+  toast("已退出登录");
+  await logout();
+});
 $("openAddProviderBtn").addEventListener("click", openAddProviderModal);
 $("closeAddProviderModalBtn").addEventListener("click", closeAddProviderModal);
+$("closeAddProviderModalBtn2").addEventListener("click", closeAddProviderModal);
 $("addProviderModal").addEventListener("click", (event) => {
   if (event.target.id === "addProviderModal") closeAddProviderModal();
 });
@@ -519,7 +570,7 @@ $("providerModal").addEventListener("click", (event) => {
 });
 $("saveProviderEditBtn").addEventListener("click", saveProfileEdits);
 $("backupCurrentProviderCheck").addEventListener("change", (event) => {
-  $("backupProviderNameWrap").classList.toggle("hidden", !event.target.checked);
+  $("backupProviderNameWrap").style.display = event.target.checked ? "block" : "none";
   if (event.target.checked) $("backupProviderName").focus();
 });
 $("cancelSwitchProviderBtn").addEventListener("click", closeSwitchProviderModal);
@@ -532,9 +583,7 @@ $("confirmOkBtn").addEventListener("click", () => resolveConfirmModal(true));
 $("confirmModal").addEventListener("click", (event) => {
   if (event.target.id === "confirmModal") resolveConfirmModal(false);
 });
-$("addEnvRowBtn").addEventListener("click", () => addEnvRow());
 $("saveEnvBtn").addEventListener("click", saveEnv);
-$("reloadEnvBtn").addEventListener("click", loadEnv);
 
 loadProfiles();
 loadSessions();
